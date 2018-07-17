@@ -219,7 +219,7 @@ on two GPUs, that is not scalable at all.
 
 [2] [Attention and Augmented Recurrent Neural Networks](https://distill.pub/2016/augmented-rnns/)
 
-[3] [Attentions is all you need](https://ai.googleblog.com/2017/08/transformer-novel-neural-network.html)
+[3] [Attention is all you need](https://ai.googleblog.com/2017/08/transformer-novel-neural-network.html)
 
 [4] [Attention is all you need (annotated)](https://nlp.seas.harvard.edu/2018/04/03/attention.html)
 
