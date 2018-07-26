@@ -6,7 +6,7 @@ authorUrl = "https://twitter.com/m0nt3kk1"
 math = "false"
 +++
 
-Attack detection has been a part of information security for decades. First 
+Attack detection has been a part of information security for decades. First
 known examples of IDS implementations date back to the early 80s. Here is what
 we read about that time on
 [Wikipedia](https://en.wikipedia.org/wiki/Intrusion_detection_system):
@@ -27,12 +27,12 @@ used to back in a day. But does it?
 
 ### Detection of attacks on web applications
 
-The first firewalls tailored to detect application specific attacks started to appear on 
-the market in the early 90s. Both attack techniques and protection mechainsms have evolved 
+The first firewalls tailored to detect application specific attacks started to appear on
+the market in the early 90s. Both attack techniques and protection mechanisms have evolved
 dramatically since then with attackers being a step forward at any time.
 
-Most WAFs nowadays attempt to detect attacks in a similar fashion: some rule-based engine 
-embedded into a reverse proxy of some type. The most prominent example is mod_security, 
+Most WAFs nowadays attempt to detect attacks in a similar fashion: some rule-based engine
+embedded into a reverse proxy of some type. The most prominent example is mod_security,
 a WAF module for Apache web server, which was created in 2002. Rule-based detection
 has some disadvantages, for instance, they fail to detect novel attacks aka 0days while these
 same attacks can easily be detected by a human expert. If you think about it, that's
@@ -131,6 +131,10 @@ For instance, natural language classification RNNs use word embeddings, however
 it is not clear what words there are in a non-natural language like HTTP. That's why
 we decided to use character embeddings in our model.
 
+We didn't use complex embedding just decided matching 'chars' to numbers. All possible
+'chars' we got from our dataset. We couldn't get only ASCII symbols because we also
+needed some special chars like `\r\n` or `\u000b` which you can see in our normal traffic.
+
 After finishing developing and testing the model all the problems predicted earlier
 became obvious but at least our team has moved from useless speculations to some
 result.
@@ -165,18 +169,125 @@ in other words, approximate an identity function. If the trained autoencoder
 is given an anomalous sample it is likely to re-create it with a high degree
 of error.
 
+So, basically, autoencoder model consists of two parts: coder and decoder. The task of
+the encoder is to compress the input data into a special representation. The task
+of the decoder part is to learn how to decode correctly from a special representation
+to the original form. If the certain input differs greatly from other data, the decoder
+can't reconstruct a representation correctly.
+
+That means that the model has never seen the data like this. So this input is considered
+as an anomaly.
+
 ![autoencoder](images/detecting-web-attacks-rnn-02.png)
 
 *image taken from [What to do when data is missing, Part II](http://curiousily.com/data-science/2017/02/02/what-to-do-when-data-is-missing-part-2.html)*
 
+Our solution is made up of several parts: model definition, training part, prediction
+part for setting specific constants and validation.
+
+We avoid typical code in the [solution](link) and comment on a few aspects only.
+
+For working with raw data we made several useful utils. The code is really simple
+and obvious, so, we hid its realization in the baseline and took it to the data folder.
+
+In the model definition part we define `Seq2Seq` class where in `__init__` method
+we initialize main model parameters:
+```
+batch_size - the number of samples in a batch
+embed_size - the dimension of embedding space (should be less than vocabulary size)
+hidden_size - the number of hidden states in lstm
+num_layers - the number of lstm blocks
+checkpoints - path to checkpoint directory
+std_factor - the number of stds that is used for defining a model threshold
+dropout - the probability that each element is kept
+vocab - the Vocabulary object
+```
+
+Then we define autoencoder's layers. For the encoder's part this way:
+```python
+  # Encoder
+  cells = [self._lstm_cell(args['hidden_size']) for _ in range(args['num_layers'])]
+  multilstm = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+
+  _, enc_state = tf.nn.dynamic_rnn(
+      multilstm,
+      enc_embed_input,
+      sequence_length=self.lengths,
+      swap_memory=True,
+      dtype=tf.float32)
+```
+
+The decoder's part like that:
+```python
+  # Decoder
+output_lengths = tf.reduce_sum(tf.to_int32(tf.not_equal(self.targets, 1)), 1)
+helper = tf.contrib.seq2seq.TrainingHelper(
+    dec_embed_input,
+    output_lengths,
+    time_major=False)
+
+cells = [self._lstm_cell(args['hidden_size']) for _ in range(args['num_layers'])]
+dec_cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+
+decoder = tf.contrib.seq2seq.BasicDecoder(dec_cell, helper, enc_state)
+
+dec_outputs = tf.contrib.seq2seq.dynamic_decode(
+    decoder,
+    output_time_major=False,
+    impute_finished=True,
+    maximum_iterations=self.max_seq_len, swap_memory=True)
+```
+
+In short, the training process is quite typical for training models. We just fit in
+our model on each step and run the tensorflow session.
+
+In case of anomaly detection problem we reconstruct input data, so targets and
+inputs are the same. Thus our `feed_dict` looks this way:
+
+```python
+feed_dict = {
+  model.inputs: X,
+  model.targets: X,
+  model.lengths: L,
+  model.dropout: self.dropout,
+  model.batch_size: self.batch_size,
+  model.max_seq_len: seq_len}
+```
+
+The best model version we save as a checkpoint. Then at the stage of prediction,
+we load it. In our proof of concept, we had not only Jupiter notebook but a running
+web application where we can load model and manually exploit some vulnerabilities
+to test our solution better.
+
+At the testing stage with our samples we've got very good results: precision and
+recall are about 0.99. And the ROC curve tends to be 1. Looks amazing!
+
+[picture of ROC](link)
+
+Let's just break down what we know already...
+Of course, these results are not a magic wand, my friends. We must be aware that the
+dataset consists of requests to particular application functionality and we can
+guarantee good results only on the data we learned. If we follow closely our dataset
+we can notice that parameters which changes for each application endpoint not so
+much. I mean if we would like to track login process we started to see that as
+usual in hole single request changes only login and password parameters and it
+became obvious for autoencoder if you try to send something malicious just because
+it is much different from being request.
+
+Ok, well.. what if we face something malicious directly in the parameter value or
+maybe in the parameter name... Here is lstm layers help us. Actually, we learn not
+only what is typical for requests but also we learn how each character is typically
+relative to one another. And that's the reason why we don't need complex embedding.
+And please note that we learn some relation on entire sequence length for each position
+relative to each other for traffic which is typical for your specific application.
+
+The complete proof of concept you can see there: [link](link)
+
 ### The result
 
 Finally, we ended up with a seq2seq autoencoder model that proved to be able to find
-anomalies in HTTP requests. Pre-processed request data is fed both to inputs
-and the outputs of the model, thus it learns to re-create the sequences it sees.
-
-We built our model into our WAF and trained against our test vulnerable application
-of a bank.
+anomalies in HTTP requests. We built our model into our WAF and trained against
+our test vulnerable application of a bank.
 
 ![bank](images/detecting-web-attacks-rnn-01.jpg)
 
@@ -185,10 +296,10 @@ requests to the web application. It detects anomalies in requests and it highlig
 the exact place of the request considered anomalous. We evaluated this model
 against some attacks on the test application and the results appeared to be promising.
 For instance, the image above depicts how our model detected the SQL injection
-split into two web form parameters. Such SQL injections are called "fragmented", 
-i.e. the attack payload portions are delivered in several HTTP parameters which makes it 
-difficult for classic rule-based WAFs to detect such cases as they usually inspect each 
-parameter individually.  The code of the model and the train/test data will be released 
+split into two web form parameters. Such SQL injections are called "fragmented",
+i.e. the attack payload portions are delivered in several HTTP parameters which makes it
+difficult for classic rule-based WAFs to detect such cases as they usually inspect each
+parameter individually.  The code of the model and the train/test data will be released
 as a Jupyter notebook so anyone can reproduce our results and suggest improvements.
 
 
