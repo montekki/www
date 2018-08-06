@@ -112,7 +112,7 @@ A tricky moment there is that some traffic seem to be malicious can be typical f
 a specific web server.
 
 So for instance, let's take a look at this request:
-[malicious](images/b_request1,png)
+[malicious](images/b_request1.png)
 
 Is it anomaly?
 Actually this request of the bag tracker and such a request is typical for this service.
@@ -224,7 +224,7 @@ as an anomaly.
 Our solution is made up of several parts: model definition, training part, prediction
 part for setting specific constants and validation.
 
-We avoid typical code in the [solution](link) and comment on a few aspects only.
+We avoid typical code in the [solution](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection) and comment on a few aspects only.
 
 For working with raw data we made several useful utils. The code is really simple
 and obvious, so, we hid its realization in the baseline and took it to the data folder.
@@ -307,7 +307,7 @@ use the probabilities to mark the malicious parts of a given request.
 At the testing stage with our samples we've got very good results: precision and
 recall are about 0.99. And the ROC curve tends to be 1. Looks amazing!
 
-[ROC](images/roc,png)
+[ROC](images/roc.png)
 
 Let's just break down what we know already...
 Of course, these results are not a magic wand, my friends. We must be aware that the
@@ -326,7 +326,7 @@ relative to one another. And that's the reason why we don't need complicated emb
 And we learn some relation on entire sequence length for each position
 relative to each other for traffic which is typical for your specific application.
 
-The complete proof of concept you can see there: [link](link)
+The complete proof of concept you can see there: [github.com](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection)
 
 ### The results
 
