@@ -39,9 +39,21 @@ same attacks can easily be detected by a human expert. If you think about it, th
 not very surprising, human brain works very differently from a set of regular
 expressions.
 
+From perspectives of WAFs, the attack types can be divided on Time series-based
+and a single HTTP request/response-based. We consider only single requests. In this
+case we able to detect attacks like this:
+- SQL Injection
+- Cross Site Scripting
+- XML External Entities Injection
+- Path Traversal  
+- OS Commanding
+- Object injection
+- etc.
+
+
 But first let's ask ourselves:
 
-### What would a human do?
+### What would a human do when he sees a single request?
 
 Take a look at an example of a regular HTTP request to some application:
 
@@ -96,6 +108,26 @@ it is.
 Essentially, our goal is to make our attack detection AI work in some fashion
 that resembles this human reasoning.
 
+A tricky moment there is that some traffic seem to be malicious can be typical for
+a specific web server.
+
+So for instance, let's take a look at this request:
+[malicious](images/b_request1,png)
+
+Is it anomaly?
+Actually this request of the bag tracker and such a request is typical for this service.
+It means that the request is benign.
+
+And let's look at another case:
+[Joomla1](images/m_request1.png)
+
+At first sight, it seemed to be ok. But parameter isn't typical for this request,
+albeit definitely felt like benign, it's not even a quote sign.
+
+And this "benign" parameter attacks Joomla < 3.6.4 (Privilege Elevation).
+
+[Joomla2](images/m_request2.png)
+
 
 ### How we started
 
@@ -131,7 +163,7 @@ For instance, natural language classification RNNs use word embeddings, however
 it is not clear what words there are in a non-natural language like HTTP. That's why
 we decided to use character embeddings in our model.
 
-We didn't use complex embedding just decided matching 'chars' to numbers. All possible
+We didn't use complicated embedding just decided matching 'chars' to numbers. All possible
 'chars' we got from our dataset. We couldn't get only ASCII symbols because we also
 needed some special chars like `\r\n` or `\u000b` which you can see in our normal traffic.
 
@@ -259,10 +291,16 @@ we load it. In our proof of concept, we had not only Jupiter notebook but a runn
 web application where we can load model and manually exploit some vulnerabilities
 to test our solution better.
 
+Being inspired by the attention mechanism we tried to apply it to autoencoder but
+noticed that probabilities output from the last layer works better. We began to
+use the probabilities to mark the malicious parts of a given request.
+
+[attention](images/malicious.png)
+
 At the testing stage with our samples we've got very good results: precision and
 recall are about 0.99. And the ROC curve tends to be 1. Looks amazing!
 
-[picture of ROC](link)
+[ROC](images/roc,png)
 
 Let's just break down what we know already...
 Of course, these results are not a magic wand, my friends. We must be aware that the
@@ -277,13 +315,13 @@ it is much different from being request.
 Ok, well.. what if we face something malicious directly in the parameter value or
 maybe in the parameter name... Here is lstm layers help us. Actually, we learn not
 only what is typical for requests but also we learn how each character is typically
-relative to one another. And that's the reason why we don't need complex embedding.
-And please note that we learn some relation on entire sequence length for each position
+relative to one another. And that's the reason why we don't need complicated embedding.
+And we learn some relation on entire sequence length for each position
 relative to each other for traffic which is typical for your specific application.
 
 The complete proof of concept you can see there: [link](link)
 
-### The result
+### The results
 
 Finally, we ended up with a seq2seq autoencoder model that proved to be able to find
 anomalies in HTTP requests. We built our model into our WAF and trained against
