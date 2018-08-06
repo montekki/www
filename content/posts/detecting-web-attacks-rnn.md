@@ -224,7 +224,7 @@ as an anomaly.
 Our solution is made up of several parts: model definition, training part, prediction
 part for setting specific constants and validation.
 
-We avoid typical code in the [solution](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection) and comment on a few aspects only.
+We avoid explanation of typical code in the [solution](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection) and comment on a few aspects only.
 
 For working with raw data we made several useful utils. The code is really simple
 and obvious, so, we hid its realization in the baseline and took it to the data folder.
