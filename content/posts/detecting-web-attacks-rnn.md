@@ -39,9 +39,9 @@ same attacks can easily be detected by a human expert. If you think about it, th
 not very surprising, human brain works very differently from a set of regular
 expressions.
 
-From perspectives of WAFs, the attack types can be divided on Time series-based
+From perspectives of WAFs, the attack types can be divided into time series-based
 and a single HTTP request/response-based. We consider only single requests. In this
-case we able to detect attacks like this:
+case we are able to detect the following attack:
 - SQL Injection
 - Cross Site Scripting
 - XML External Entities Injection
@@ -108,23 +108,25 @@ it is.
 Essentially, our goal is to make our attack detection AI work in some fashion
 that resembles this human reasoning.
 
-A tricky moment there is that some traffic seem to be malicious can be typical for
-a specific web server.
+A tricky moment here is that some traffic, looking malicious at first sight, might
+be normal for a specific web site.
 
-So for instance, let's take a look at this request:
+For instance, let's take a look at this request:
 [malicious](images/b_request1.png)
 
-Is it anomaly?
-Actually this request of the bag tracker and such a request is typical for this service.
-It means that the request is benign.
+Is it an anomaly?
+In fact, this request is issued by the Jira bug tracker and is typical for this service,
+which means that the request is benign.
 
-And let's look at another case:
+Now let's take a look at another case:
 [Joomla1](images/m_request1.png)
 
-At first sight, it seemed to be ok. But parameter isn't typical for this request,
-albeit definitely felt like benign, it's not even a quote sign.
+At first sight the request looks like a typical user registration on a web site
+powered by Joomla CMS. However, the requested operation is "user.register" instead
+of normal "registration.register". The former option is deprecated and contains
+a vulnerability allowing anybody to register themselves as an administrator.
 
-And this "benign" parameter attacks Joomla < 3.6.4 (Privilege Elevation).
+This exploit is known as "Joomla < 3.6.4 Account Creation / Privilege Escalation" (CVE-2016-8869, CVE-2016-8870).
 
 [Joomla2](images/m_request2.png)
 
@@ -163,9 +165,9 @@ For instance, natural language classification RNNs use word embeddings, however
 it is not clear what words there are in a non-natural language like HTTP. That's why
 we decided to use character embeddings in our model.
 
-We didn't use complicated embedding just decided matching 'chars' to numbers. All possible
-'chars' we got from our dataset. We couldn't get only ASCII symbols because we also
-needed some special chars like `\r\n` or `\u000b` which you can see in our normal traffic.
+Ready-made embeddings are irrelevant for solving the problem, that is why we used
+simple mappings of characters to numeric codes with several internal markers like
+`<GO>` and `<EOS>`.
 
 After finishing developing and testing the model all the problems predicted earlier
 became obvious but at least our team has moved from useless speculations to some
@@ -208,29 +210,27 @@ in other words, approximate an identity function. If the trained autoencoder
 is given an anomalous sample it is likely to re-create it with a high degree
 of error.
 
-So, basically, autoencoder model consists of two parts: coder and decoder. The task of
-the encoder is to compress the input data into a special representation. The task
-of the decoder part is to learn how to decode correctly from a special representation
-to the original form. If the certain input differs greatly from other data, the decoder
-can't reconstruct a representation correctly.
+Simply put, an autoencoder model consists of two parts: an encoder and a decoder.
+The task of the encoder is to compress a certain input into a special representation.
+The task of the decoder part is to learn how to decode correctly from this representation
+to the original form. If the certain input differs greatly from other samples, the decoder
+won't be able to reconstruct the original text correctly.
 
-That means that the model has never seen the data like this. So this input is considered
+It means that the model has never seen a sample like this. So this input is considered
 as an anomaly.
 
 ![autoencoder](images/detecting-web-attacks-rnn-02.png)
 
 *image taken from [What to do when data is missing, Part II](http://curiousily.com/data-science/2017/02/02/what-to-do-when-data-is-missing-part-2.html)*
 
-Our solution is made up of several parts: model definition, training part, prediction
-part for setting specific constants and validation.
+Our solution is made up of several parts: model initialization, training, prediction,
+and validation.
 
-We avoid explanation of typical code in the [solution](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection) and comment on a few aspects only.
+Most of the code located in the  [repository](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection)
+is self-explanatory, we will focus on important parts only.
 
-For working with raw data we made several useful utils. The code is really simple
-and obvious, so, we hid its realization in the baseline and took it to the data folder.
-
-In the model definition part we define `Seq2Seq` class where in `__init__` method
-we initialize main model parameters:
+The model is initialized as an instance of the `Seq2Seq` class which has the following
+constructor arguments:
 ```
 batch_size - the number of samples in a batch
 embed_size - the dimension of embedding space (should be less than vocabulary size)
@@ -242,7 +242,7 @@ dropout - the probability that each element is kept
 vocab - the Vocabulary object
 ```
 
-Then we define autoencoder's layers. For the encoder's part this way:
+After that, the autoencoder layers are initialized. Firstly, the encoder:
 ```python
   # Encoder
   cells = [self._lstm_cell(args['hidden_size']) for _ in range(args['num_layers'])]
@@ -256,7 +256,7 @@ Then we define autoencoder's layers. For the encoder's part this way:
       dtype=tf.float32)
 ```
 
-The decoder's part like that:
+And then the decoder:
 ```python
   # Decoder
 output_lengths = tf.reduce_sum(tf.to_int32(tf.not_equal(self.targets, 1)), 1)
@@ -277,11 +277,8 @@ dec_outputs = tf.contrib.seq2seq.dynamic_decode(
     maximum_iterations=self.max_seq_len, swap_memory=True)
 ```
 
-In short, the training process is quite typical for training models. We just fit in
-our model on each step and run the tensorflow session.
-
-In case of anomaly detection problem we reconstruct input data, so targets and
-inputs are the same. Thus our `feed_dict` looks this way:
+Since the problem we solve is an anomaly detection, the targets and inputs are the same.
+Thus our `feed_dict` looks this way:
 
 ```python
 feed_dict = {
@@ -293,46 +290,44 @@ feed_dict = {
   model.max_seq_len: seq_len}
 ```
 
-The best model version we save as a checkpoint. Then at the stage of prediction,
-we load it. In our proof of concept, we had not only Jupiter notebook but a running
-web application where we can load model and manually exploit some vulnerabilities
-to test our solution better.
+After each epoch the best model is saved as a checkpoint, which can be later loaded
+to do predictions. For testing purposes a live web application was set up and was
+protected by the model so that it was possible to test if real attacks were successful or not.
 
-Being inspired by the attention mechanism we tried to apply it to autoencoder but
-noticed that probabilities output from the last layer works better. We began to
-use the probabilities to mark the malicious parts of a given request.
+Being inspired by the attention mechanism we tried to apply it to the autoencoder but
+noticed that probabilities output from the last layer works better to mark the anomalous
+parts of a given request.
 
 [attention](images/malicious.png)
 
 At the testing stage with our samples we've got very good results: precision and
-recall are about 0.99. And the ROC curve tends to be 1. Looks amazing!
+recall are close to 0.99. And the ROC curve is around 1. Looks amazing!
 
 [ROC](images/roc.png)
 
-Let's just break down what we know already...
+Let's recap what we have learned.
 Of course, these results are not a magic wand, my friends. We must be aware that the
 dataset consists of requests to particular application functionality and we can
 guarantee good results only on the data we learned. If we follow closely our dataset
 we can notice that parameters which changes for each application endpoint not so
-much. I mean if we would like to track login process we started to see that as
-usual in hole single request changes only login and password parameters and it
-became obvious for autoencoder if you try to send something malicious just because
-it is much different from being request.
+much. Let's imagine the login process. In the whole single request, we can notice
+changes only in login and password parameters. It became obvious for the autoencoder
+if you try to send something malicious because it much differs from being request.
 
 Ok, well.. what if we face something malicious directly in the parameter value or
-maybe in the parameter name... Here is lstm layers help us. Actually, we learn not
+maybe in the parameter name... Here is LSTM layers help us. Actually, we learn not
 only what is typical for requests but also we learn how each character is typically
 relative to one another. And that's the reason why we don't need complicated embedding.
 And we learn some relation on entire sequence length for each position
 relative to each other for traffic which is typical for your specific application.
 
-The complete proof of concept you can see there: [github.com](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection)
+The final Proof-of-Concept code can be obtained
+[here](https://github.com/PositiveTechnologies/seq2seq-web-attack-detection).
 
 ### The results
 
-Finally, we ended up with a seq2seq autoencoder model that proved to be able to find
-anomalies in HTTP requests. We built our model into our WAF and trained against
-our test vulnerable application of a bank.
+Suggested Seq2Seq autoencoder model proved to be able to detect anomalies in HTTP
+requests with high precision.
 
 ![bank](images/detecting-web-attacks-rnn-01.jpg)
 
